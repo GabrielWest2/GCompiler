@@ -4,57 +4,63 @@ public class DataLocation {
     private final Type type;
     private final StorageType storageType;
 
-    public static void main(String[] args) {
-        DataLocation onStack = DataLocation.stack(8, Type.CHAR);
-        DataLocation eax = DataLocation.register("eax", Type.CHAR);
-        DataLocation inData = DataLocation.data("a", Type.CHAR);
-
-        System.out.println(eax.moveTo(inData));
-    }
-
     public enum StorageType {
         STACK,
         DATA_SECTION,
-        REGISTER
+        REGISTER,
+        CONSTANT
     }
 
     private final int stackIndex;
     private final String identifier;
+    private final Object literal;
 
-    private DataLocation(Type type, StorageType storageType, int stackIndex, String identifier) {
+    private DataLocation(Type type, StorageType storageType, int stackIndex, String identifier, Object literal) {
         this.type = type;
         this.storageType = storageType;
         this.stackIndex = stackIndex;
         this.identifier = identifier;
+        this.literal = literal;
     }
 
     public static DataLocation register(String registerName, Type type) {
-        return new DataLocation(type, StorageType.REGISTER, -1, registerName);
+        return new DataLocation(type, StorageType.REGISTER, -1, registerName, null);
     }
 
     public static DataLocation stack(int offset, Type type) {
-        return new DataLocation(type, StorageType.STACK, offset, null);
+        return new DataLocation(type, StorageType.STACK, offset, null, null);
     }
 
     public static DataLocation data(String identifier, Type type) {
-        return new DataLocation(type, StorageType.DATA_SECTION, -1, identifier);
+        return new DataLocation(type, StorageType.DATA_SECTION, -1, identifier, null);
     }
+
+    public static DataLocation constant(Object literal, Type type) {
+        return new DataLocation(type, StorageType.CONSTANT, -1, null, literal);
+    }
+
 
     public void freeScratchRegister() {
         if (this.storageType == StorageType.REGISTER) {
-            Emitter.freeScratchRegister(this.identifier);
+            if (this.identifier.equals("ebx") || this.identifier.equals("edi") || this.identifier.equals("esi")) {
+                Emitter.freeScratchRegister(this.identifier);
+            }
         }
     }
 
 
-    public String moveTo(DataLocation other) {
+    public void moveTo(DataLocation other, String comment) {
         if (this.type != other.type) {
-            throw new IllegalArgumentException("Type mismatch between source and destination");
+            System.out.println("this is " + this.type + " and " + this.storageType);
+            throw new IllegalArgumentException("Type mismatch between source and destination. Cannot move " + this.type + " to " + other.type);
         }
 
         String sizeSuffix;
+
         switch (this.type) {
-            case CHAR, BOOL -> sizeSuffix = "byte";
+            case CHAR, BOOL -> {
+                sizeSuffix = "byte";
+            }
             case SHORT -> sizeSuffix = "word";
             case INT, FLOAT -> sizeSuffix = "dword";
             case DOUBLE -> sizeSuffix = "qword";
@@ -62,7 +68,24 @@ public class DataLocation {
                     throw new IllegalArgumentException("Unsupported type for move operation");
         }
 
-        String source = this.asSource();
+        String source;
+
+        //TODO check:    when moving a char or bool from a register to memory, must only access al
+        if (sizeSuffix.equals("byte") && this.storageType == StorageType.REGISTER && other.storageType != StorageType.REGISTER) {
+            // move to eax first
+            Emitter.emitln("mov eax, " + this.asSource());
+            source = "al";
+        } else {
+            source = this.asSource();
+        }
+
+        //TODO check:   remove unnecessary size specification
+        if (this.storageType == StorageType.REGISTER && other.storageType == StorageType.REGISTER ||
+                this.storageType == StorageType.DATA_SECTION && other.storageType == StorageType.REGISTER ||
+                this.storageType == StorageType.STACK && other.storageType == StorageType.REGISTER) {
+            sizeSuffix = "";
+        }
+
 
         String destination;
         switch (other.storageType) {
@@ -74,7 +97,7 @@ public class DataLocation {
                     throw new IllegalArgumentException("Unsupported storage type for destination");
         }
 
-        return "mov " + sizeSuffix + " " + destination + ", " + source;
+        Emitter.emitln("mov " + sizeSuffix + " " + destination + ", " + source + " ; " + comment);
     }
 
     @Override
@@ -89,6 +112,7 @@ public class DataLocation {
                     source = "[ebp" + (this.stackIndex >= 0 ? "+" : "") + this.stackIndex + "]";
             case DATA_SECTION -> source = "[" + this.identifier + "]";
             case REGISTER -> source = this.identifier;
+            case CONSTANT -> source = Emitter.literalString(this.literal);
             default ->
                     throw new IllegalArgumentException("Unsupported storage type for source");
         }

@@ -17,6 +17,29 @@ public enum Type {
         };
     }
 
+    public static Type from(Object o) {
+        if (o instanceof Character) {
+            return CHAR;
+        }
+        if (o instanceof Boolean) {
+            return BOOL;
+        }
+        if (o instanceof Short) {
+            return SHORT;
+        }
+        if (o instanceof Integer) {
+            return INT;
+        }
+        if (o instanceof Float) {
+            return FLOAT;
+        }
+        if (o instanceof Double) {
+            return DOUBLE;
+        }
+
+        return CLASS;
+    }
+
     public boolean isNumeric() {
         return this == CHAR || this == SHORT || this == INT || this == FLOAT || this == DOUBLE;
     }

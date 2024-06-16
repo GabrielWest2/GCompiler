@@ -4,7 +4,10 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 
 public class Emitter {
     public record BSS(String name, int bytes) {
@@ -19,20 +22,20 @@ public class Emitter {
     private static final List<String> externals;
     private static final HashMap<LabelType, Integer> labelNums;
 
-    private static Stack<StringBuilder> programs;
-    private static StringBuilder program;
+    private static final StringBuilder program;
+    private static final StringBuilder functionSection;
 
     private static int indentLevel;
     private static final int COMMENT_START = 25;
+    public static boolean inFunctionSection = false;
 
     static {
         freeRegisters = new ArrayList<>(Arrays.asList("ebx", "edi", "esi"));
         dataSection = new ArrayList<>();
         bssSection = new ArrayList<>();
         externals = new ArrayList<>();
-        programs = new Stack<>();
         program = new StringBuilder();
-        programs.push(program);
+        functionSection = new StringBuilder();
         labelNums = new HashMap<>();
         for (LabelType l : LabelType.values()) labelNums.put(l, 0);
     }
@@ -150,27 +153,24 @@ public class Emitter {
         externals.add(s);
     }
 
-    public static void emit(String line) {
-        program.append(line);
-    }
 
     static void emitln(String line) {
-
+        StringBuilder b = inFunctionSection ? functionSection : program;
         if (line.contains(";")) {
             String code = line.split(";")[0];
             String comment = line.split(";")[1];
             if (code.length() < COMMENT_START && !code.isEmpty()) {
 
 
-                program.append("    ".repeat(indentLevel)).append(code).append(" ".repeat(COMMENT_START - code.length())).append(";").append(comment).append("\n");
+                b.append("    ".repeat(indentLevel)).append(code).append(" ".repeat(COMMENT_START - code.length())).append(";").append(comment).append("\n");
             } else
-                program.append("    ".repeat(indentLevel)).append(line).append("\n");
+                b.append("    ".repeat(indentLevel)).append(line).append("\n");
         } else
-            program.append("    ".repeat(indentLevel)).append(line).append("\n");
+            b.append("    ".repeat(indentLevel)).append(line).append("\n");
     }
 
     static void emitln() {
-        program.append("\n");
+        emitln("\n");
     }
 
     static void indent() {
@@ -182,6 +182,29 @@ public class Emitter {
         indentLevel = Math.max(0, indentLevel);
     }
 
+    static void epilogue() {
+        Emitter.emitln("; Epilogue");
+        Emitter.emitln("mov esp, ebp ; Return stack pointer");
+        Emitter.emitln("pop ebp ; Recover base pointer");
+        Emitter.emitln("ret ; Return from function");
+    }
+
+    public static String literalString(Object o) {
+        if (o instanceof Integer)
+            return o.toString();
+        else if (o instanceof Double)
+            return o.toString();
+        else if (o instanceof StringLiteral literal) {
+            return "\"" + literal.str + "\"";
+        } else if (o instanceof Character) {
+            return "'" + o + "'";
+        } else if (o instanceof Boolean) {
+            Boolean b = (Boolean) o;
+            return b ? "1" : "0";
+        }
+        throw new RuntimeException("Unhandled default value: " + o.getClass().getSimpleName());
+    }
+
     private static String generateProgram() {
         StringBuilder sb = new StringBuilder();
         sb.append("section .data\n");
@@ -189,7 +212,7 @@ public class Emitter {
             if (d.defaultValue instanceof Integer)
                 sb.append("    ").append(d.name).append(" dd ").append(d.defaultValue).append(" ; Declare int").append("\n");
             else if (d.defaultValue instanceof Double)
-                sb.append("    ").append(d.name).append(" dq ").append(d.defaultValue).append(" ; Declare float").append("\n");
+                sb.append("    ").append(d.name).append(" dq ").append(d.defaultValue).append(" ; Declare double").append("\n");
             else if (d.defaultValue instanceof StringLiteral) {
                 StringLiteral literal = (StringLiteral) d.defaultValue;
                 sb.append("    ").append(d.name).append(" db \"").append(literal.str).append("\", ").append(literal.ending.getEnding()).append(" ; Declare string").append("\n");
@@ -209,10 +232,10 @@ public class Emitter {
             sb.append("    extern ").append(external).append("\n");
         sb.append("\n_main:\n");
         sb.append(program.toString());
+        sb.append(functionSection.toString());
 
         return sb.toString();
     }
-
 
     static void printProgram() {
         System.out.println(generateProgram());

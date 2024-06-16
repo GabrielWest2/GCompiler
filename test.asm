@@ -1,11 +1,10 @@
 section .data
     str0 db "%d", 0 ; Declare string
-    a dd 1 ; Declare int
-    b dd 1 ; Declare int
-    c dd 0 ; Declare int
-    myChar db 'h' ; Declare character
-    v dd 0 ; Declare int
-    str1 db "fib(%d):   %d    %c", 10, 0 ; Declare string
+    str1 db "params: %d  %d  %d  %d", 10, 0 ; Declare string
+    d dd 0 ; Declare int
+    str2 db "false", 0 ; Declare string
+    str3 db "true", 0 ; Declare string
+    str4 db "d was: %s", 10, 0 ; Declare string
 section .bss
 section .text
     global _main
@@ -13,67 +12,79 @@ section .text
     extern _printf
 
 _main:
-
-    ; While
-WHILE_BEGIN0:
-    mov dword ebx, [v]       ; Store variable in register
-    mov edi, 10              ; Move literal into edi
-    cmp ebx, edi             ; Compare value in register ebx with register edi
-    jg CMP_IS_TRUE0          ; Jump if ebx > edi
-    mov edi, 1               ; Set edi to 1 because ebx <= edi
-    jmp CMP_END0             ; Jump to end of compare, edi has been set
-CMP_IS_TRUE0:
-    mov edi, 0               ; Set edi to 0 because ebx > edi
-CMP_END0:
-    test edi, edi            ; Check for false (0)
-    jz WHILE_END0            ; Jump to end if false
-
-    ; Expression
-    mov dword edi, [a]       ; Store variable in register
-    mov dword ebx, [b]       ; Store variable in register
-    add edi, ebx
-    mov dword [c], edi       ; Assign variable
-
-
-    ; Expression
-    mov byte edi, [myChar]   ; Store variable in register
-    push edi                 ; Push function arg 3 onto stack
-    mov dword edi, [b]       ; Store variable in register
-    push edi                 ; Push function arg 2 onto stack
-    mov dword edi, [v]       ; Store variable in register
-    push edi                 ; Push function arg 1 onto stack
-    mov edi, str1            ; Store memory address of string in edi
-    push edi                 ; Push function arg 0 onto stack
-    call _printf             ; Result will be in eax
-    mov dword edi, eax       ; Move return value to edi
-    add esp, 16              ; Clean up the stack
-
-
-    ; Expression
-    mov dword edi, [a]       ; Store variable in register
-    mov dword [b], edi       ; Assign variable
-
-
-    ; Expression
-    mov dword edi, [c]       ; Store variable in register
-    mov dword [a], edi       ; Assign variable
-
-
-    ; Expression
-    mov dword edi, [v]       ; Store variable in register
-    mov ebx, 1               ; Move literal into ebx
-    add edi, ebx
-    mov dword [v], edi       ; Assign variable
-
-    jmp WHILE_BEGIN0         ; Jump to start, try again
-WHILE_END0:
-
-
-    ; Return
-    mov edi, 0               ; Move literal into edi
-    push dword edi           ; Push exit code
-    call _ExitProcess@4      ; Exit program
-
+    
 
     ; Function
+    
+
+    push 4                   ; Push function arg 3 onto stack
+    push 3                   ; Push function arg 2 onto stack
+    push 2                   ; Push function arg 1 onto stack
+    push 1                   ; Push function arg 0 onto stack
+    call coolFunc            ; Result will be in eax
+    mov  ebx, eax            ; Move return value to ebx
+    add esp, 16              ; Clean up the stack
+    mov eax, ebx
+    mov byte [d], al         ; Move value into variable
+    
+
+    ; Expression
+    mov  ebx, [d]            ; Store variable in register
+    cmp ebx, 1               ; Check condition for ternary
+    je CMP_IS_TRUE0          ; Jump if condition is true
+    mov ebx, str2            ; Store memory address of string in ebx
+    jmp CMP_END0             ; Jump to end of ternary
+CMP_IS_TRUE0:
+    mov edi, str3            ; Store memory address of string in edi
+    mov  ebx, edi            ;  
+CMP_END0:
+    push ebx                 ; Push function arg 1 onto stack
+    mov ebx, str4            ; Store memory address of string in ebx
+    push ebx                 ; Push function arg 0 onto stack
+    call _printf             ; Result will be in eax
+    
+
+    
+
+    ; Return
+    push dword 0             ; Push exit code
+    call _ExitProcess@4      ; Exit program
+    
+
+coolFunc:
+    ; Prologue
+    push ebp                 ; Push base pointer
+    mov ebp, esp             ; Move stack ptr to base ptr
+                             ; [ IDENTIFIER a ]  at  [ebp+8]
+                             ; [ IDENTIFIER b ]  at  [ebp+12]
+                             ; [ IDENTIFIER c ]  at  [ebp+16]
+                             ; [ IDENTIFIER d ]  at  [ebp+20]
+    
+
+    ; Expression
+    mov  ebx, [ebp+20]       ; Store variable in register
+    push ebx                 ; Push function arg 4 onto stack
+    mov  ebx, [ebp+16]       ; Store variable in register
+    push ebx                 ; Push function arg 3 onto stack
+    mov  ebx, [ebp+12]       ; Store variable in register
+    push ebx                 ; Push function arg 2 onto stack
+    mov  ebx, [ebp+8]        ; Store variable in register
+    push ebx                 ; Push function arg 1 onto stack
+    mov ebx, str1            ; Store memory address of string in ebx
+    push ebx                 ; Push function arg 0 onto stack
+    call _printf             ; Result will be in eax
+    
+
+    sub esp, 4               ; Allocate space for local var 'myChar'
+    mov dword [ebp-4], 1     ; Store value in local var
+    
+
+    ; Return
+    mov  ebx, [ebp-4]        ; Store variable in register
+    mov  eax, ebx            ; Put return value in eax
+    ; Epilogue
+    mov esp, ebp             ; Return stack pointer
+    pop ebp                  ; Recover base pointer
+    ret                      ; Return from function
+    
 

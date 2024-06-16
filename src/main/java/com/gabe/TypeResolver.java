@@ -1,21 +1,34 @@
 package com.gabe;
 
+import java.util.HashMap;
+
 public class TypeResolver implements Expr.Visitor<Type> {
 
     private static final TypeResolver instance;
+    private static final HashMap<Expr, Type> resolvedTypes = new HashMap<>();
 
     static {
         instance = new TypeResolver();
     }
 
     static Type resolveType(Expr expr) {
-        return expr.accept(instance);
+        if (resolvedTypes.containsKey(expr)) {
+            return resolvedTypes.get(expr);
+        }
+        Type t = expr.accept(instance);
+        resolvedTypes.put(expr, t);
+        return t;
     }
 
 
     @Override
     public Type visitAssignExpr(Expr.Assign expr) {
-        return null;
+        GVar var = Codegen.currentEnvironment.findVar(expr.name.lexeme());
+        Type varType = var.type;
+        Type valType = resolveType(expr.value);
+        if (valType != varType) Main.typeError(expr.name, "Incompatible types");
+
+        return valType;
     }
 
     @Override
@@ -56,7 +69,8 @@ public class TypeResolver implements Expr.Visitor<Type> {
     @Override
     public Type visitCallExpr(Expr.Call expr) {
         //TODO allow for overloading??
-        GFunction func = Codegen.currentEnviornment.findFunction(expr.name.lexeme());
+        GFunction func = Codegen.currentEnvironment.findFunction(expr.name.lexeme());
+
         //TODO check function types
         return func.type;
     }
@@ -81,6 +95,11 @@ public class TypeResolver implements Expr.Visitor<Type> {
 
     @Override
     public Type visitLogicalExpr(Expr.Logical expr) {
+        Type left = resolveType(expr.left);
+        Type right = resolveType(expr.right);
+        if (!(left == Type.INT && right == Type.INT)) {
+            Main.typeError(expr.operator, "Cannot use logical expressions with non-integer types");
+        }
         return null;
     }
 
@@ -92,12 +111,21 @@ public class TypeResolver implements Expr.Visitor<Type> {
 
     @Override
     public Type visitTernaryExpr(Expr.Ternary expr) {
-        return null;
+        Type condition = resolveType(expr.cond);
+        if (!condition.isBool())
+            Main.typeError(expr.operator, "Expected boolean condition");
+
+        Type left = resolveType(expr.left);
+        Type right = resolveType(expr.right);
+        if (left != right)
+            Main.typeError(expr.operator, "Ternary must return same types");
+
+        return left;
     }
 
     @Override
     public Type visitVariableExpr(Expr.Variable expr) {
-        GVar var = Codegen.currentEnviornment.findVar(expr.name.lexeme());
+        GVar var = Codegen.currentEnvironment.findVar(expr.name.lexeme());
         return var.type;
     }
 }

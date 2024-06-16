@@ -1,13 +1,20 @@
 package com.gabe;
 
+import java.util.Collections;
+
 public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
 
     private static final Codegen instance;
-    public static Enviornment currentEnviornment;
+    public static Environment currentEnvironment;
+
+    private static GFunction currentFunction = null;
+
 
     static {
         instance = new Codegen();
-        currentEnviornment = new Enviornment(null);
+        currentEnvironment = new Environment(null);
+        // TODO find a better way to do this
+        currentEnvironment.defineFunction(new Token(null, "_printf", null, -1, -1), new GFunction("_printf", Type.VOID, Collections.EMPTY_LIST, true));
     }
 
     static DataLocation genExpr(Expr expr) {
@@ -45,9 +52,53 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
         String name = stmt.name.lexeme();
         Type t = stmt.returnType;
 
-        System.out.println("function " + name + " returns " + t);
-        stmt.params.forEach(System.out::println);
-        currentEnviornment.defineFunction(stmt.name, new GFunction(stmt.name.lexeme(), t, stmt.params));
+        GFunction func = new GFunction(stmt.name.lexeme(), t, stmt.params, false);
+        currentEnvironment.defineFunction(stmt.name, func);
+
+        // Start function state
+        Emitter.inFunctionSection = true;
+        GFunction prevFunction = currentFunction;
+        currentFunction = func;
+        currentEnvironment = new Environment(currentEnvironment);
+
+        //TODO funcs in funcs?
+
+        Emitter.defineLabel(name);
+        Emitter.emitln("; Prologue");
+        Emitter.emitln("push ebp ; Push base pointer");
+        Emitter.emitln("mov ebp, esp ; Move stack ptr to base ptr");
+
+
+        for (int i = 0; i < stmt.params.size(); i++) {
+            int offset = (i + 2) * 4;
+            GVar param = stmt.params.get(i);
+            DataLocation paramLoc = DataLocation.stack(offset, param.type);
+            Emitter.emitln("  ; " + param.name + "  at  " + paramLoc);
+            currentEnvironment.defineVar(param.name, param, paramLoc);
+        }
+        int stmtCount = stmt.body.size();
+        boolean returnAtEnd = false;
+        for (int i = 0; i < stmtCount; i++) {
+            Stmt statement = stmt.body.get(i);
+            if (statement instanceof Stmt.Return && i != stmtCount - 1) {
+                //TODO make warning?
+                Main.compileError(((Stmt.Return) statement).keyword, "Unreachable code.");
+            } else if (statement instanceof Stmt.Return && i == stmtCount - 1) {
+                returnAtEnd = true;
+            }
+
+            genStmt(statement);
+        }
+
+
+        if (!returnAtEnd) {
+            Emitter.epilogue();
+        }
+
+        // Return to previous state
+        currentEnvironment = currentEnvironment.parent;
+        currentFunction = prevFunction;
+        Emitter.inFunctionSection = false;
 
         return null;
     }
@@ -98,28 +149,51 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
     @Override
     public Void visitVarStmt(Stmt.Var stmt) {
         Type t = stmt.type;
-        currentEnviornment.defineVar(stmt.name, new GVar(stmt.name.lexeme(), t));
-
         String name = stmt.name.lexeme();
-        if (stmt.initializer instanceof Expr.Literal)
-            Emitter.addData(new Emitter.DATA(name, ((Expr.Literal) stmt.initializer).value));
-        else if (stmt.initializer != null) {
+
+        if (currentEnvironment.findVar(name) != null)
+            Main.compileError(stmt.name, "Variable already defined.");
+
+        GVar var;
+        DataLocation varLoc;
+        if (currentEnvironment.isGlobal()) {
+            varLoc = DataLocation.data(name, t);
+            var = new GVar(stmt.name, t);
+            currentEnvironment.defineVar(stmt.name, var, varLoc);
+        } else {
+            currentEnvironment.currentLocalVarStackOffset -= 4;
+            varLoc = DataLocation.stack(currentEnvironment.currentLocalVarStackOffset, t);
+            var = new GVar(stmt.name, t);
+            currentEnvironment.defineVar(stmt.name, var, varLoc);
+        }
+
+
+        if (stmt.initializer instanceof Expr.Literal) {
+            if (currentEnvironment.isGlobal()) {
+                Emitter.addData(new Emitter.DATA(name, ((Expr.Literal) stmt.initializer).value));
+            } else {
+                Emitter.emitln("sub esp, 4 ; Allocate space for local var '" + name + "'");
+                Emitter.emitln("mov dword " + varLoc + ", " + Emitter.literalString(((Expr.Literal) stmt.initializer).value) + " ; Store value in local var");
+            }
+        } else if (stmt.initializer != null) {
             Emitter.addData(new Emitter.DATA(name, 0));
             DataLocation valReg = Codegen.genExpr(stmt.initializer);
 
-            //this.generateTypeMoveCode(valReg, name, t);
             valReg.freeScratchRegister();
-            DataLocation dataLocation = DataLocation.data(name, t);
-            Emitter.emitln(valReg.moveTo(dataLocation) + " ; Set var to val");
-            
-        } else Emitter.addData(new Emitter.DATA(name, 0));
+            //TODO change
+            valReg.moveTo(varLoc, "Move value into variable");
+
+        } else {
+            Emitter.addData(new Emitter.DATA(name, 0));
+        }
+
         return null;
     }
 
     @Override
     public Void visitReturnStmt(Stmt.Return stmt) {
         //TODO check if method is void, check return type
-        if (currentEnviornment.isGlobal()) {
+        if (currentEnvironment.isGlobal()) {
             DataLocation returnReg = Codegen.genExpr(stmt.value);
             Emitter.emitln("push dword " + returnReg.asSource() + " ; Push exit code");
             Emitter.emitln("call _ExitProcess@4 ; Exit program");
@@ -128,10 +202,11 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
                 DataLocation returnReg = Codegen.genExpr(stmt.value);
                 returnReg.freeScratchRegister();
 
-                DataLocation eaxReg = DataLocation.register("eax", Type.INT);
-                Emitter.emitln(returnReg.moveTo(eaxReg) + " ; Put return value in eax");
+                Type returnType = currentFunction.type;
+                DataLocation eaxReg = DataLocation.register("eax", returnType);
+                returnReg.moveTo(eaxReg, "Put return value in eax");
             }
-            //TODO exit function
+            Emitter.epilogue();
         }
         return null;
     }
@@ -146,37 +221,18 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
 
         String name = expr.name.lexeme();
         Type t = TypeResolver.resolveType(expr.value);
-        GVar v = currentEnviornment.findVar(name);
+        GVar v = currentEnvironment.findVar(name);
+        DataLocation varLoc = currentEnvironment.findVarLocation(name);
         if (v == null) Main.compileError(expr.name, "Variable not found");
         Type varType = v.type;
         if (t != varType) Main.typeError(expr.name, "Incompatible types");
 
-        //TODO put on stack if in func
-        DataLocation dataLocation = DataLocation.data(name, varType);
-        //this.generateTypeMoveCode(valReg, name, t);
-        Emitter.emitln(valReg.moveTo(dataLocation) + " ; Assign variable");
+
+        valReg.moveTo(varLoc, "Assign variable");
         //TODO maybe illegal?
         return valReg;
     }
-/*
-    private void generateTypeMoveCode(DataLocation valReg, String name, Type t) {
-        String dataType = t.toString().toLowerCase();
-        switch (t) {
-            case CHAR:
-            case BOOL:
-                Emitter.emitln("mov eax, " + valReg + " ; Move " + dataType + " into eax");
-                Emitter.emitln("mov [" + name + "], al ; Store lower 8 bits (" + dataType + ")");
-                break;
-            case SHORT:
-                //   Emitter.emitln("mov " + tmp + ", " + valReg + " ; Move " + dataType + " into " + tmp);
-                Emitter.emitln("mov [" + name + "], " + Emitter.getReg(valReg, Emitter.RegisterType.B16) + " ; Store lower 16 bits (" + dataType + ")");
-            case INT:
-            case FLOAT:
-                //Emitter.emitln("mov " + tmp + ", " + valReg + " ; Move val into reg");
-                Emitter.emitln("mov [" + name + "], " + valReg + " ; Store lower 32 bits (" + dataType + ")");
 
-        }
-    }*/
 
     @Override
     public DataLocation visitBinaryExpr(Expr.Binary expr) {
@@ -204,7 +260,7 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
                 //TODO type checks
                 DataLocation out = Emitter.allocScratchRegister(Type.INT);
                 DataLocation eax = DataLocation.register("eax", Type.INT);
-                Emitter.emitln(eax.moveTo(out) + " ; Store output of division");
+                eax.moveTo(out, "Store output of division");
                 return out;
             case PERCENT:
                 Emitter.emitln("mov eax, " + leftReg.asSource());
@@ -214,7 +270,7 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
                 rightReg.freeScratchRegister();
                 DataLocation remainder = Emitter.allocScratchRegister(Type.INT);
                 DataLocation edx = DataLocation.register("edx", Type.INT);
-                Emitter.emitln(edx.moveTo(remainder) + " ; Store remainder of division");
+                edx.moveTo(remainder, "Store remainder of division");
                 return remainder;
             case STAR:
                 Emitter.emitln("imul " + leftReg.asSource() + ", " + rightReg.asSource());
@@ -319,10 +375,21 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
         }
         Emitter.emitln("call " + expr.name.lexeme() + " ; Result will be in eax");
         //TODO replace with return type
-        DataLocation out = Emitter.allocScratchRegister(Type.INT);
-        DataLocation eax = DataLocation.register("eax", Type.INT);
-        Emitter.emitln(eax.moveTo(out) + " ; Move return value to " + out);
-        Emitter.emitln("add esp, " + (expr.arguments.size() * 4) + " ; Clean up the stack");
+
+        GFunction func = currentEnvironment.findFunction(expr.name.lexeme());
+        if (func == null) {
+            Main.compileError(expr.name, "Function not defined");
+        }
+        Type returnType = func.type;
+        //TODO check if exists
+
+        DataLocation out = Emitter.allocScratchRegister(returnType);
+        if (returnType != Type.VOID) {
+            DataLocation eax = DataLocation.register("eax", returnType);
+            eax.moveTo(out, "Move return value to " + out);
+            Emitter.emitln("add esp, " + (expr.arguments.size() * 4) + " ; Clean up the stack");
+            return out;
+        }
         return out;
     }
 
@@ -333,29 +400,16 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
 
     @Override
     public DataLocation visitLiteralExpr(Expr.Literal expr) {
-        if (expr.value instanceof Integer) {
-            DataLocation reg = Emitter.allocScratchRegister(Type.INT);
-            Emitter.emitln("mov " + reg.asSource() + ", " + Integer.toString((Integer) expr.value, 10) + " ; Move literal into " + reg);
-            return reg;
-        } else if (expr.value instanceof String) {
+        //TODO define in rodata
+        if (expr.value instanceof String) {
             DataLocation reg = Emitter.allocScratchRegister(Type.CHAR);
             String store = Emitter.declareStringConstant(expr.value.toString());
 
             Emitter.emitln("mov " + reg + ", " + store + " ; Store memory address of string in " + reg);
             return reg;
-        } else if (expr.value instanceof Boolean) {
-            DataLocation reg = Emitter.allocScratchRegister(Type.BOOL);
-            int val = (Boolean) expr.value ? 1 : 0;
-            Emitter.emitln("mov " + reg + ", " + val + " ; Store boolean (" + ((Boolean) expr.value ? "true" : "false") + ") in " + reg);
-            return reg;
-        } else if (expr.value instanceof Character) {
-            DataLocation reg = Emitter.allocScratchRegister(Type.CHAR);
-            Character val = (Character) expr.value;
-            Emitter.emitln("mov " + reg + ", '" + val + "' ; Store char '" + val + "' in " + reg);
-            return reg;
         }
 
-        throw new RuntimeException("Unhandled literal type: " + expr.value.getClass().getSimpleName());
+        return DataLocation.constant(expr.value, Type.from(expr.value));
     }
 
     @Override
@@ -414,7 +468,7 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
         Emitter.defineLabel(ternaryTrueLabel);
         DataLocation outReg2 = genExpr(expr.left);
         if (!outReg2.equals(outReg)) {
-            Emitter.emitln(outReg2.moveTo(outReg) + " ; Move result value into " + outReg);
+            outReg2.moveTo(outReg, " ; Move result value into " + outReg);
             outReg2.freeScratchRegister();
         }
         Emitter.defineLabel(ternaryEndLabel);
@@ -423,24 +477,15 @@ public class Codegen implements Expr.Visitor<DataLocation>, Stmt.Visitor<Void> {
 
     @Override
     public DataLocation visitVariableExpr(Expr.Variable expr) {
-        // TODO check type of variable, pointers should be passed directly, but values should be enclosed with []
+        // TODO check type of variable, pointers should be passed directly, but values should be enclosed with []. idek asm so meh
         Type t = TypeResolver.resolveType(expr);
         DataLocation reg = Emitter.allocScratchRegister(t);
-        DataLocation var = DataLocation.data(expr.name.lexeme(), t);
-        /*switch (t) {
-            case CHAR:
-            case BOOL:
-                Emitter.emitln("movzx " + reg + ", byte [" + expr.name.lexeme() + "] ; Move the byte from " + expr.name.lexeme() + " into " + reg);
-                break;
-            case SHORT:
-                Emitter.emitln("movzx " + reg + ", word [" + expr.name.lexeme() + "] ; Move the word from " + expr.name.lexeme() + " into " + reg);
-            case INT:
-            case FLOAT:
-                Emitter.emitln("mov " + reg + ", [" + expr.name.lexeme() + "] ; Move int into " + reg);
-                //TODO double
-        }*/
+        DataLocation var = currentEnvironment.findVarLocation(expr.name.lexeme());
 
-        Emitter.emitln(var.moveTo(reg) + " ; Store variable in register");
+        if (var == null) Main.compileError(expr.name, "Variable not defined");
+
+
+        var.moveTo(reg, "Store variable in register");
         return reg;
     }
 

@@ -1,10 +1,10 @@
 package com.gabe;
 
 public class GVar {
-    public final String name;
+    public final Token name;
     public final Type type;
 
-    public GVar(String name, Type type) {
+    public GVar(Token name, Type type) {
         this.name = name;
         this.type = type;
     }

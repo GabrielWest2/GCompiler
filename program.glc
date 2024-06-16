@@ -1,18 +1,12 @@
-var a: int = 1;
-var b: int = 1;
-var c: int = 0;
-var myChar: char = 'h';
-for(var v: int = 0; v <= 10; v = v + 1){
-    c = a + b;
-    _printf("fib(%d):   %d    %c\n", v, b, myChar);
-    b = a;
-    a = c;
-
+def coolFunc(a: int, b: int, c: int, d: int) : bool {
+    _printf("params: %d  %d  %d  %d\n", a, b, c, d);
+    var myChar: bool = true;
+    return myChar;
 }
+
+var d: bool = coolFunc(1, 2, 3, 4);
+
+_printf("d was: %s\n", d ? "true" : "false");
 
 return 0;
 
-def coolFunc(a: int, b: int, c: int, d: int) : int {
-    printf("params: %d  %d  %d  %d", a, b, c, d);
-    return 7;
-}

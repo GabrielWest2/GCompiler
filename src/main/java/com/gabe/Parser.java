@@ -79,7 +79,7 @@ class Parser {
                 consume(TokenType.COLON, "Expect colon.");
                 Token ptype = consume(TokenType.IDENTIFIER, "Expected parameter type");
                 Type t = Type.from(ptype.lexeme());
-                params.add(new GVar(pname.lexeme(), t));
+                params.add(new GVar(pname, t));
             } while (match(TokenType.COMMA));
         }
         consume(TokenType.RIGHT_PAREN, "Expect ) after params of " + type);
