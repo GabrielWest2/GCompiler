@@ -53,7 +53,7 @@ public enum TokenType {
     NULL("^null(?![_a-zA-Z0-9])"),
     OR("^or(?![_a-zA-Z0-9])"),
     XOR("^xor(?![_a-zA-Z0-9])"),
-    PRINT("^print(?![_a-zA-Z0-9])"),
+    PRINT("^print(ln)?(?![_a-zA-Z0-9])"),
     RETURN("^return(?=[\\s;])"),
     SUPER("^super(?![_a-zA-Z0-9])"),
     THIS("^this(?![_a-zA-Z0-9])"),
@@ -69,7 +69,7 @@ public enum TokenType {
     // Literals.
     STRING("^\\\"(\\\\.|[^\\\"\\\\])*\\\""),
     CHAR("^\\'(\\\\.|[^\\\"\\\\])\\'"),
-    NUMBER("^\\d+\\.?\\d*"),
+    NUMBER("^\\d+\\.?\\d*[fd]?"),
     IDENTIFIER("^[_a-zA-Z\\p{So}_]{1,31}[_a-zA-Z0-9\\p{So}_]{0,31}"),
 
     // End of File

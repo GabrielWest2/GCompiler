@@ -48,7 +48,16 @@ class Tokenizer {
                                 break token_search;
                             }
                             case NUMBER -> {
-                                tokens.add(new Token(t, match, Double.parseDouble(match), lineNum, charNum));
+                                Object num;
+                                if (match.endsWith("f")) {
+                                    num = Float.parseFloat(match.substring(0, match.length() - 1));
+                                } else if (match.endsWith("d")) {
+                                    num = Double.parseDouble(match.substring(0, match.length() - 1));
+                                } else {
+                                    num = Integer.parseInt(match);
+                                }
+
+                                tokens.add(new Token(t, match, num, lineNum, charNum));
                                 break token_search;
                             }
                             case STRING -> {

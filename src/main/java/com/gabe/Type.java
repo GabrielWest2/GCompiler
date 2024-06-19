@@ -2,7 +2,7 @@ package com.gabe;
 
 public enum Type {
     //TODO pointer types
-    VOID, CHAR, BOOL, SHORT, INT, FLOAT, DOUBLE, CLASS;
+    VOID, CHAR, BOOL, SHORT, INT, FLOAT, STRING, CLASS;
 
     public static Type from(String lexeme) {
         return switch (lexeme) {
@@ -12,7 +12,6 @@ public enum Type {
             case "short" -> SHORT;
             case "int" -> INT;
             case "float" -> FLOAT;
-            case "double" -> DOUBLE;
             default -> CLASS;
         };
     }
@@ -33,21 +32,24 @@ public enum Type {
         if (o instanceof Float) {
             return FLOAT;
         }
-        if (o instanceof Double) {
-            return DOUBLE;
+        if (o instanceof String) {
+            return STRING;
         }
 
         return CLASS;
     }
 
     public boolean isNumeric() {
-        return this == CHAR || this == SHORT || this == INT || this == FLOAT || this == DOUBLE;
+        return this == CHAR || this == SHORT || this == INT || this == FLOAT;
     }
 
     public static Type higherNumeric(Type t1, Type t2) {
-        if (t1.isNumeric() && t2.isNumeric())
-            return Type.values()[Math.max(t1.ordinal(), t2.ordinal())];
+        if (t1.isNumeric() && t2.isNumeric()) {
+            Type t = Type.values()[Math.max(t1.ordinal(), t2.ordinal())];
+            return t;
+        }
         Main.typeError(null, "Expected 2 numbers, got " + t1.ordinal() + " and " + t2.ordinal());
+
         return null;
     }
 

@@ -52,7 +52,7 @@ public class TypeResolver implements Expr.Visitor<Type> {
                         op == TokenType.SLASH ||
                         op == TokenType.PERCENT) {
             Type left = resolveType(expr.left);
-            Type right = resolveType(expr.left);
+            Type right = resolveType(expr.right);
             if (!(left.isNumeric() && right.isNumeric()))
                 Main.typeError(expr.operator, "Expected 2 numbers");
             return Type.higherNumeric(left, right);
@@ -71,7 +71,7 @@ public class TypeResolver implements Expr.Visitor<Type> {
         //TODO allow for overloading??
         GFunction func = Codegen.currentEnvironment.findFunction(expr.name.lexeme());
 
-        //TODO check function types
+        //TODO move check param types here?
         return func.type;
     }
 
@@ -87,7 +87,6 @@ public class TypeResolver implements Expr.Visitor<Type> {
         if (expr.value instanceof Short) return Type.SHORT;
         if (expr.value instanceof Boolean) return Type.BOOL;
         if (expr.value instanceof Integer) return Type.INT;
-        if (expr.value instanceof Double) return Type.DOUBLE;
         if (expr.value instanceof Float) return Type.FLOAT;
 
         return Type.CLASS;
@@ -126,6 +125,10 @@ public class TypeResolver implements Expr.Visitor<Type> {
     @Override
     public Type visitVariableExpr(Expr.Variable expr) {
         GVar var = Codegen.currentEnvironment.findVar(expr.name.lexeme());
+        if (var == null) {
+            Main.compileError(expr.name, "Variable not found");
+            return null;
+        }
         return var.type;
     }
 }

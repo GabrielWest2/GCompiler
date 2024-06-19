@@ -18,7 +18,8 @@ public class Main {
         List<Stmt> stmts = Parser.parse(tokens);
         Emitter.addExternal("_ExitProcess@4");
         Emitter.addExternal("_printf");
-        Emitter.declareStringConstant("%d");
+        Emitter.addData(new Emitter.DATA("floatreg1", 0.0f));
+        Emitter.addData(new Emitter.DATA("floatreg2", 0.0f));
         Emitter.indent();
         stmts.forEach(Codegen::genStmt);
         Emitter.unindent();

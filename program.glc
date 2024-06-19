@@ -1,12 +1,6 @@
-def coolFunc(a: int, b: int, c: int, d: int) : bool {
-    _printf("params: %d  %d  %d  %d\n", a, b, c, d);
-    var myChar: bool = true;
-    return myChar;
-}
+var a: float = 50.0f;
+var b: float = 3.0f;
+var c: float = a / b;
+_printf("%f\n", c);
 
-var d: bool = coolFunc(1, 2, 3, 4);
-
-_printf("d was: %s\n", d ? "true" : "false");
-
-return 0;
-
+return 1000 + 1000;

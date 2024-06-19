@@ -19,6 +19,10 @@ public class Emitter {
     private static final List<DATA> dataSection;
     private static final List<BSS> bssSection;
     private static final List<String> freeRegisters;
+    private static final List<String> freeFloatLocations;
+
+
+    static final List<String> usedRegisters;
     private static final List<String> externals;
     private static final HashMap<LabelType, Integer> labelNums;
 
@@ -26,11 +30,13 @@ public class Emitter {
     private static final StringBuilder functionSection;
 
     private static int indentLevel;
-    private static final int COMMENT_START = 25;
+    private static final int COMMENT_START = 35;
     public static boolean inFunctionSection = false;
 
     static {
         freeRegisters = new ArrayList<>(Arrays.asList("ebx", "edi", "esi"));
+        freeFloatLocations = new ArrayList<>(Arrays.asList("floatreg1", "floatreg2"));
+        usedRegisters = new ArrayList<>();
         dataSection = new ArrayList<>();
         bssSection = new ArrayList<>();
         externals = new ArrayList<>();
@@ -38,6 +44,15 @@ public class Emitter {
         functionSection = new StringBuilder();
         labelNums = new HashMap<>();
         for (LabelType l : LabelType.values()) labelNums.put(l, 0);
+    }
+
+    public static DataLocation allocFloatTmp(Type t) {
+        return DataLocation.data(freeFloatLocations.get(0), t);
+    }
+
+    public static void freeFloatTmp(DataLocation location) {
+        freeFloatLocations.add(location.identifier);
+        if (freeRegisters.size() > 2) System.out.println("uhh ohh " + 0 / 0);
     }
 
     public enum LabelType {
@@ -112,8 +127,9 @@ public class Emitter {
 
 
     private static int stringNum;
+    private static int floatNum;
 
-    static String declareStringConstant(String s) {
+    static DataLocation declareStringConstant(String s) {
         String name = "str" + stringNum++;
         LineEnding ending = LineEnding.NULL;
         if (s.endsWith("\r\n")) {
@@ -124,7 +140,13 @@ public class Emitter {
             s = s.substring(0, s.length() - 1);
         }
         dataSection.add(new DATA(name, new StringLiteral(s, ending)));
-        return name;
+        return DataLocation.data(name, Type.STRING);
+    }
+
+    static DataLocation declareFloatConstant(Float f) {
+        String name = "cfloat" + floatNum++;
+        dataSection.add(new DATA(name, f));
+        return DataLocation.data(name, Type.FLOAT);
     }
 
     static String getNextLabelName(LabelType l) {
@@ -201,6 +223,8 @@ public class Emitter {
         } else if (o instanceof Boolean) {
             Boolean b = (Boolean) o;
             return b ? "1" : "0";
+        } else if (o == null) {
+            return "0";
         }
         throw new RuntimeException("Unhandled default value: " + o.getClass().getSimpleName());
     }
@@ -211,6 +235,8 @@ public class Emitter {
         for (DATA d : dataSection)
             if (d.defaultValue instanceof Integer)
                 sb.append("    ").append(d.name).append(" dd ").append(d.defaultValue).append(" ; Declare int").append("\n");
+            else if (d.defaultValue instanceof Float)
+                sb.append("    ").append(d.name).append(" dd ").append(d.defaultValue).append(" ; Declare float").append("\n");
             else if (d.defaultValue instanceof Double)
                 sb.append("    ").append(d.name).append(" dq ").append(d.defaultValue).append(" ; Declare double").append("\n");
             else if (d.defaultValue instanceof StringLiteral) {
@@ -258,13 +284,13 @@ public class Emitter {
             throw new RuntimeException("Out of registers");
         }
         String s = freeRegisters.remove(0);
-        //System.out.println(s + " checked out.   line: " + Thread.currentThread().getStackTrace()[2].getLineNumber());
+        usedRegisters.add(s);
         return DataLocation.register(s, t);
     }
 
     static void freeScratchRegister(String s) {
         freeRegisters.add(0, s);
-        //System.out.println(s + " freed.   line: " + Thread.currentThread().getStackTrace()[2].getLineNumber());
+        usedRegisters.remove(s);
         if (freeRegisters.size() > 3) {
             printProgram();
             throw new RuntimeException("REGISTER FREED TOO MUCH: " + s);

@@ -99,10 +99,12 @@ public abstract class Stmt {
     }
 
     public static class Print extends Stmt {
-        Print(Expr expression) {
+        Print(Token token, Expr expression) {
             this.expression = expression;
+            this.token = token;
         }
 
+        final Token token;
         final Expr expression;
 
         @Override

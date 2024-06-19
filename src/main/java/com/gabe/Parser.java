@@ -158,20 +158,17 @@ class Parser {
     }
 
     private static Stmt printStatement() {
+        Token t = prev();
         Expr value = expression();
         consume(TokenType.SEMICOLON, "Line should be followed by semicolon");
-        return new Stmt.Print(value);
+        return new Stmt.Print(t, value);
     }
-
-    // Statement Rules
 
 
     // Expression Rules
     private static Expr expression() {
         return assignment();
     }
-
-    //private static Expr
 
     private static Expr assignment() {
         Expr expr = ternary();
@@ -295,9 +292,7 @@ class Parser {
         if (match(TokenType.TRUE)) return new Expr.Literal(true);
         if (match(TokenType.NULL)) return new Expr.Literal(null);
         if (match(TokenType.NUMBER)) {
-            Double d = (Double) prev().literal();
-            if (d % 1 == 0) return new Expr.Literal((int) d.doubleValue());
-            return new Expr.Literal(d);
+            return new Expr.Literal(prev().literal());
         }
         if (match(TokenType.STRING)) return new Expr.Literal(prev().literal());
         if (match(TokenType.CHAR)) return new Expr.Literal(prev().literal());
